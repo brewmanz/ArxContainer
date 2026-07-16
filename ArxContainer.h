@@ -568,7 +568,508 @@ private:
         return (it.raw_pos() >= head_) && (it.raw_pos() < tail_);
     }
 };
+#if 1
+typedef int8_t intTiny;
+typedef uint8_t size_tTiny;
+template <typename T, size_tTiny N>
+class RingBufferTiny {
+    class IteratorTiny;
+    class ConstIteratorTiny {
+        friend RingBufferTiny<T, N>;
 
+        const T* ptr {nullptr};  // pointer to the first element
+        intTiny pos {0};
+
+        ConstIteratorTiny(const T* ptr, intTiny pos)
+        : ptr(ptr), pos(pos) {}
+
+    public:
+        ConstIteratorTiny() {}
+        ConstIteratorTiny(const ConstIteratorTiny& it) {
+            this->ptr = it.ptr;
+            this->pos = it.pos;
+        }
+
+        ConstIteratorTiny(ConstIteratorTiny&& it) {
+            this->ptr = container::detail::move(it.ptr);
+            this->pos = container::detail::move(it.pos);
+        }
+
+        ConstIteratorTiny& operator=(const ConstIteratorTiny& rhs) {
+            this->ptr = rhs.ptr;
+            this->pos = rhs.pos;
+            return *this;
+        }
+        ConstIteratorTiny& operator=(ConstIteratorTiny&& rhs) {
+            this->ptr = container::detail::move(rhs.ptr);
+            this->pos = container::detail::move(rhs.pos);
+            return *this;
+        }
+
+        // const-like conversion ConstIterator => Iterator
+        IteratorTiny to_iterator() const {
+            return IteratorTiny(this->ptr, this->pos);
+        }
+
+    private:
+        static int pos_wrap_around(const intTiny pos) {
+            if (pos >= 0)
+                return pos % N;
+            else
+                return (N - 1) - (abs(pos + 1) % N);
+        }
+
+    public:
+        intTiny index() const {
+            return pos_wrap_around(pos);
+        }
+        intTiny index_with_offset(const intTiny i) const {
+            return pos_wrap_around(pos + i);
+        }
+
+        const T& operator*() const {
+            return *(ptr + index());
+        }
+        const T* operator->() const {
+            return ptr + index();
+        }
+
+        ConstIteratorTiny operator+(const intTiny n) const {
+            return ConstIterator(this->ptr, this->pos + n);
+        }
+        intTiny operator-(const ConstIteratorTiny& rhs) const {
+            return this->pos - rhs.pos;
+        }
+        ConstIteratorTiny operator-(const intTiny n) const {
+            return ConstIterator(this->ptr, this->pos - n);
+        }
+        ConstIteratorTiny& operator+=(const intTiny n) {
+            this->pos += n;
+            return *this;
+        }
+        ConstIteratorTiny& operator-=(const intTiny n) {
+            this->pos -= n;
+            return *this;
+        }
+
+        // prefix increment/decrement
+        ConstIteratorTiny& operator++() {
+            ++pos;
+            return *this;
+        }
+        ConstIteratorTiny& operator--() {
+            --pos;
+            return *this;
+        }
+        // postfix increment/decrement
+        ConstIteratorTiny operator++(int) { // MUST take unnamed 'int'
+            ConstIteratorTiny it = *this;
+            ++pos;
+            return it;
+        }
+        ConstIteratorTiny operator--(int) { // MUST take unnamed 'int'
+            ConstIteratorTiny it = *this;
+            --pos;
+            return it;
+        }
+
+        bool operator==(const ConstIteratorTiny& rhs) const {
+            return (rhs.ptr == ptr) && (rhs.pos == pos);
+        }
+        bool operator!=(const ConstIteratorTiny& rhs) const {
+            return !(*this == rhs);
+        }
+        bool operator<(const ConstIteratorTiny& rhs) const {
+            return pos < rhs.pos;
+        }
+        bool operator<=(const ConstIteratorTiny& rhs) const {
+            return pos <= rhs.pos;
+        }
+        bool operator>(const ConstIteratorTiny& rhs) const {
+            return pos > rhs.pos;
+        }
+        bool operator>=(const ConstIteratorTiny& rhs) const {
+            return pos >= rhs.pos;
+        }
+
+    private:
+        intTiny raw_pos() const {
+            return pos;
+        }
+
+        void set(const intTiny i) {
+            pos = i;
+        }
+
+        void reset() {
+            pos = 0;
+        }
+    };
+    class IteratorTiny : public ConstIteratorTiny {
+        friend RingBufferTiny<T, N>;
+
+        IteratorTiny(const T* ptr, intTiny pos) {
+            this->ptr = ptr;
+            this->pos = pos;
+        }
+
+    public:
+        IteratorTiny() = default;
+        IteratorTiny(const IteratorTiny&) = default;
+        IteratorTiny(IteratorTiny&&) = default;
+        IteratorTiny& operator=(const IteratorTiny&) = default;
+        IteratorTiny& operator=(IteratorTiny&&) = default;
+
+        T& operator*() {
+            return *(const_cast<T*>(this->ptr) + this->index());
+        }
+        T* operator->() {
+            return const_cast<T*>(this->ptr) + this->index();
+        }
+
+        // all inherited methods that return ConstIterator must be reimplemented
+        IteratorTiny operator+(const intTiny n) const {
+            return IteratorTiny(this->ptr, this->pos + n);
+        }
+        IteratorTiny operator-(const intTiny n) const {
+            return IteratorTiny(this->ptr, this->pos - n);
+        }
+        IteratorTiny& operator+=(const intTiny n) {
+            this->pos += n;
+            return *this;
+        }
+        IteratorTiny& operator-=(const intTiny n) {
+            this->pos -= n;
+            return *this;
+        }
+
+        // prefix increment/decrement
+        IteratorTiny& operator++() {
+            ++(this->pos);
+            return *this;
+        }
+        IteratorTiny& operator--() {
+            --(this->pos);
+            return *this;
+        }
+        // postfix increment/decrement
+        IteratorTiny operator++(int) { // MUST take unnamed int param
+            IteratorTiny it = *this;
+            ++(this->pos);
+            return it;
+        }
+        IteratorTiny operator--(int) { // MUST take unnamed int param
+            IteratorTiny it = *this;
+            --(this->pos);
+            return it;
+        }
+    };
+
+protected:
+    friend class IteratorTiny;
+    friend class ConstIteratorTiny;
+
+    T queue_[N];
+    intTiny head_;
+    intTiny tail_;
+
+public:
+    using iteratorTiny = IteratorTiny;
+    using const_iteratorTiny = ConstIteratorTiny;
+
+    RingBufferTiny()
+    : queue_()
+    , head_(0)
+    , tail_(0) {
+    }
+
+    RingBufferTiny(std::initializer_list<T> lst)
+    : queue_()
+    , head_(0)
+    , tail_(0) {
+        for (auto it = lst.begin(); it != lst.end(); ++it) {
+            push_back(*it);
+        }
+    }
+
+    // copy
+    explicit RingBufferTiny(const RingBufferTiny& r)
+    : queue_()
+    , head_(r.head_)
+    , tail_(r.tail_) {
+        const_iteratorTiny it = r.begin();
+        for (size_tTiny i = 0; i < r.size(); ++i) {
+            intTiny pos = it.index_with_offset(i);
+            queue_[pos] = r.queue_[pos];
+        }
+    }
+    RingBufferTiny& operator=(const RingBufferTiny& r) {
+        head_ = r.head_;
+        tail_ = r.tail_;
+        const_iteratorTiny it = r.begin();
+        for (size_tTiny i = 0; i < r.size(); ++i) {
+            intTiny pos = it.index_with_offset(i);
+            queue_[pos] = r.queue_[pos];
+        }
+        return *this;
+    }
+
+    // move
+    RingBufferTiny(RingBufferTiny&& r) {
+        head_ = container::detail::move(r.head_);
+        tail_ = container::detail::move(r.tail_);
+        const_iteratorTiny it = r.begin();
+        for (size_tTiny i = 0; i < r.size(); ++i) {
+            intTiny pos = it.index_with_offset(i);
+            queue_[pos] = container::detail::move(r.queue_[pos]);
+        }
+    }
+
+    RingBufferTiny& operator=(RingBufferTiny&& r) {
+        head_ = container::detail::move(r.head_);
+        tail_ = container::detail::move(r.tail_);
+        const_iteratorTiny it = r.begin();
+        for (size_tTiny i = 0; i < r.size(); ++i) {
+            intTiny pos = it.index_with_offset(i);
+            queue_[pos] = container::detail::move(r.queue_[pos]);
+        }
+        return *this;
+    }
+
+    size_tTiny capacity() const { return N; };
+    size_tTiny size() const { return tail_ - head_; }
+    // data() method better not to use :-(
+    // it should point to the 1st item and have enough space for size() readings of items
+    // impossible with ringbuffer - either points to the 1st item or has enough space
+    // only exception when it works is when head_ pos == 0
+    const T* data() const { return reinterpret_cast<const T*>(&(queue_)); }
+    T* data() { return reinterpret_cast<T*>(&(queue_)); }
+    bool empty() const { return tail_ == head_; }
+    void clear() { head_ = tail_ = 0; }
+
+    void pop() {
+        pop_front();
+    }
+    void pop_front() {
+        if (size() == 0) return;
+        if (size() == 1)
+            clear();
+        else
+            increment_head();
+    }
+    void pop_back() {
+        if (size() == 0) return;
+        if (size() == 1)
+            clear();
+        else
+            decrement_tail();
+    }
+
+    void push(const T& data) {
+        push_back(data);
+    }
+    void push(T&& data) {
+        push_back(data);
+    }
+    void push_back(const T& data) {
+        get(size()) = data;
+        increment_tail();
+    }
+    void push_back(T&& data) {
+        get(size()) = data;
+        increment_tail();
+    }
+    void push_front(const T& data) {
+        decrement_head();
+        get(0) = data;
+    }
+    void push_front(T&& data) {
+        decrement_head();
+        get(0) = data;
+    }
+    void emplace(const T& data) { push(data); }
+    void emplace(T&& data) { push(data); }
+    void emplace_back(const T& data) { push_back(data); }
+    void emplace_back(T&& data) { push_back(data); }
+
+    const T& front() const { return get(0); }
+    T& front() { return get(0); }
+
+    const T& back() const { return get(static_cast<intTiny>(size()) - 1); }
+    T& back() { return get(static_cast<intTiny>(size()) - 1); }
+
+    const T& operator[](size_tTiny index) const { return get(static_cast<intTiny>(index)); }
+    T& operator[](size_tTiny index) { return get(static_cast<intTiny>(index)); }
+
+    iteratorTiny begin() { return empty() ? IteratorTiny() : IteratorTiny(queue_, head_); }
+    iteratorTiny end() { return empty() ? IteratorTiny() : IteratorTiny(queue_, tail_); }
+    const_iteratorTiny begin() const { return empty() ? ConstIteratorTiny() : ConstIteratorTiny(queue_, head_); }
+    const_iteratorTiny end() const { return empty() ? ConstIteratorTiny() : ConstIteratorTiny(queue_, tail_); }
+
+    // https://en.cppreference.com/w/cpp/container/vector/erase
+    iteratorTiny erase(const const_iteratorTiny& p) {
+        if (!is_valid(p)) return end();
+
+        iteratorTiny it_last = end() - 1;
+        for (iteratorTiny it = p.to_iterator(); it != it_last; ++it)
+            *it = *(it + 1);
+        *it_last = T();
+        decrement_tail();
+        return empty() ? end() : p.to_iterator();
+    }
+
+    void resize(size_tTiny sz) {
+        size_tTiny s = size();
+        if (sz > s) {
+            for (size_tTiny i = 0; i < sz - s; ++i) push(T());
+        } else if (sz < s) {
+            for (size_tTiny i = 0; i < s - sz; ++i) pop();
+        }
+    }
+
+    void assign(const_iteratorTiny first, const_iteratorTiny end) {
+        clear();
+        while (first != end) push(*(first++));
+    }
+
+    void assign(const T* first, const T* end) {
+        clear();
+        while (first != end) push(*(first++));
+    }
+
+    void shrink_to_fit() {
+        // dummy
+    }
+
+    void reserve(size_tTiny n) {
+        (void)n;
+        // dummy
+    }
+
+    void fill(const T& v) {
+        for (iteratorTiny it = begin(); it != end(); ++it)
+            *it = v;
+    }
+
+    // https://en.cppreference.com/w/cpp/container/vector/insert
+    void insert(const const_iteratorTiny& pos, const const_iteratorTiny& first, const const_iteratorTiny& last) {
+        if (!is_valid(pos) && pos != end())
+            return;
+
+        size_tTiny sz = last - first;
+
+        size_tTiny new_sz = size() + sz;
+        if (new_sz > capacity())
+            new_sz = capacity();
+
+        iteratorTiny it = begin() + new_sz - 1;
+        while (it != pos) {
+            *it = *(it - sz);
+            --it;
+        }
+        for (size_tTiny i = 0; i < sz; ++i) {
+            *(it + i) = *(first + i);
+            if (size() < capacity() || (it + i) == end())
+                increment_tail();
+        }
+    }
+
+    void insert(const const_iteratorTiny& pos, const T* first, const T* last) {
+        if (!is_valid(pos) && pos != end())
+            return;
+
+        size_tTiny sz = last - first;
+
+        size_tTiny new_sz = size() + sz;
+        if (new_sz > capacity())
+            new_sz = capacity();
+
+        iteratorTiny it = begin() + new_sz - 1;
+        while (it != pos) {
+            *it = *(it - sz);
+            --it;
+        }
+        for (size_tTiny i = 0; i < sz; ++i) {
+            *(it + i) = *(first + i);
+            if (size() < capacity() || (it + i) == end())
+                increment_tail();
+        }
+    }
+
+    void insert(const const_iteratorTiny& pos, const T& val) {
+        const T* ptr = &val;
+        insert(pos, ptr, ptr + 1);
+    }
+
+private:
+    T& get(const iteratorTiny& it) {
+        return queue_[it.index()];
+    }
+    const T& get(const const_iteratorTiny& it) const {
+        return queue_[it.index()];
+    }
+    T& get(const intTiny index) {
+        return queue_[begin().index_with_offset(index)];
+    }
+    const T& get(const intTiny index) const {
+        return queue_[begin().index_with_offset(index)];
+    }
+
+    T* ptr(const iteratorTiny& it) {
+        return queue_ + it.index();
+    }
+    const T* ptr(const const_iteratorTiny& it) const {
+        return queue_ + it.index();
+    }
+    T* ptr(const intTiny index) {
+        return queue_ + begin().index_with_offset(index);
+    }
+    const T* ptr(const intTiny index) const {
+        return queue_ + begin().index_with_offset(index);
+    }
+
+    void increment_head() {
+        ++head_;
+        resolve_overflow();
+    }
+    void increment_tail() {
+        ++tail_;
+        resolve_overflow();
+        if (size() > N)
+            increment_head();
+    }
+    void decrement_head() {
+        --head_;
+        resolve_overflow();
+        if (size() > N)
+            decrement_tail();
+    }
+    void decrement_tail() {
+        --tail_;
+        resolve_overflow();
+    }
+
+    void resolve_overflow() {
+        if (empty())
+            clear();
+        // TODO check vvvv
+        else if (head_ <= (static_cast<intTiny>(INT_MIN) + static_cast<intTiny>(capacity())) \
+                || tail_ >= (static_cast<intTiny>(INT_MAX) - static_cast<intTiny>(capacity()))) {
+            // +/- capacity(): reserve some space for pointer/iterator arithmetics
+            // head_/tail_ pointers are re-set N+1 steps before the overflow occurs
+            intTiny len = size();
+            head_ = begin().index();
+            tail_ = head_ + len;
+        }
+    }
+
+    bool is_valid(const const_iteratorTiny& it) const {
+        if (it.ptr != queue_)
+            return false; // iterator to a different object
+        return (it.raw_pos() >= head_) && (it.raw_pos() < tail_);
+    }
+};
+#endif
 } // namespace arx
 
 template <typename T, size_t N>
@@ -706,7 +1207,42 @@ private:
     using RingBuffer<T, N>::push;
     using RingBuffer<T, N>::fill;
 };
+#if 1
+template <typename T, size_t N = ARX_DEQUE_DEFAULT_SIZE>
+struct dequeTiny : public RingBufferTiny<T, N> {
+    using iteratorTiny = typename RingBufferTiny<T, N>::iteratorTiny;
+    using const_iteratorTiny = typename RingBufferTiny<T, N>::const_iteratorTiny;
 
+    dequeTiny()
+    : RingBufferTiny<T, N>() {}
+    dequeTiny(std::initializer_list<T> lst)
+    : RingBufferTiny<T, N>(lst) {}
+
+    // copy
+    dequeTiny(const dequeTiny& r)
+    : RingBufferTiny<T, N>(r) {}
+
+    dequeTiny& operator=(const dequeTiny& r) {
+        RingBufferTiny<T, N>::operator=(r);
+        return *this;
+    }
+
+    // move
+    dequeTiny(dequeTiny&& r)
+    : RingBufferTiny<T, N>(r) {}
+
+    dequeTiny& operator=(dequeTiny&& r) {
+        RingBufferTiny<T, N>::operator=(r);
+        return *this;
+    }
+
+private:
+    using RingBufferTiny<T, N>::capacity;
+    using RingBufferTiny<T, N>::pop;
+    using RingBufferTiny<T, N>::push;
+    using RingBufferTiny<T, N>::fill;
+};
+#endif
 } // namespace arx
 } // namespace stdx
 
