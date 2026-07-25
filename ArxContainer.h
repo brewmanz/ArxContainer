@@ -568,7 +568,7 @@ private:
         return (it.raw_pos() >= head_) && (it.raw_pos() < tail_);
     }
 };
-#if 1
+#if 0
 typedef int8_t intTiny;
 typedef uint8_t size_tTiny;
 template <typename T, size_tTiny N>
@@ -1207,7 +1207,7 @@ private:
     using RingBuffer<T, N>::push;
     using RingBuffer<T, N>::fill;
 };
-#if 1
+#if 0
 template <typename T, size_t N = ARX_DEQUE_DEFAULT_SIZE>
 struct dequeTiny : public RingBufferTiny<T, N> {
     using iteratorTiny = typename RingBufferTiny<T, N>::iteratorTiny;
@@ -1286,6 +1286,14 @@ struct map : public RingBuffer<pair<Key, T>, N> {
     : base() {}
     map(std::initializer_list<pair<Key, T> > lst)
     : base(lst) {}
+
+    map(const_iterator iBegin, const_iterator iEnd)
+    : base() {
+        for (auto it = iBegin; it != iEnd; ++it) {
+            push_back(*it);
+        }
+    }
+
 
     // copy
     map(const map& r)
