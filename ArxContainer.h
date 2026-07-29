@@ -71,51 +71,68 @@ namespace container {
 }  // namespace container
 
 template <typename T, size_t N>
-class RingBuffer {
+class RingBuffer;
+
+template <typename T>
+class RingBuffer_base {
+  public:
+    RingBuffer_base(size_t n)
+    : m_N(n) {}
+    inline size_t capacity() const { return m_N; }
+  private:
+    size_t m_N;
+  public:
     class Iterator;
     class ConstIterator {
-        friend RingBuffer<T, N>;
+        friend class RingBuffer_base<T>;
+        template <typename TT, size_t N>
+        friend class RingBuffer;
 
         const T* ptr {nullptr};  // pointer to the first element
         int pos {0};
+        size_t N {1};
 
-        ConstIterator(const T* ptr, int pos)
-        : ptr(ptr), pos(pos) {}
+        ConstIterator(const T* ptr, int pos, size_t n)
+        : ptr(ptr), pos(pos), N(n) {}
 
     public:
         ConstIterator() {}
         ConstIterator(const ConstIterator& it) {
             this->ptr = it.ptr;
             this->pos = it.pos;
+            this->N = it.N;
         }
 
         ConstIterator(ConstIterator&& it) {
             this->ptr = container::detail::move(it.ptr);
             this->pos = container::detail::move(it.pos);
+            this->N = container::detail::move(it.N);
         }
 
         ConstIterator& operator=(const ConstIterator& rhs) {
             this->ptr = rhs.ptr;
             this->pos = rhs.pos;
+            this->N = rhs.N;
             return *this;
         }
         ConstIterator& operator=(ConstIterator&& rhs) {
             this->ptr = container::detail::move(rhs.ptr);
             this->pos = container::detail::move(rhs.pos);
+            this->N = container::detail::move(rhs.N);
             return *this;
         }
 
         // const-like conversion ConstIterator => Iterator
         Iterator to_iterator() const {
-            return Iterator(this->ptr, this->pos);
+            return Iterator(this->ptr, this->pos, this->N);
         }
 
-    private:
-        static int pos_wrap_around(const int pos) {
+    protected:
+        int pos_wrap_around(const int pos) const{
             if (pos >= 0)
                 return pos % N;
-            else
-                return (N - 1) - (abs(pos + 1) % N);
+            // // else
+            return (N - 1) - (abs(pos + 1) % N);
         }
 
     public:
@@ -173,7 +190,7 @@ class RingBuffer {
         }
 
         bool operator==(const ConstIterator& rhs) const {
-            return (rhs.ptr == ptr) && (rhs.pos == pos);
+            return (rhs.ptr == ptr) && (rhs.pos == pos) && (rhs.N == N);
         }
         bool operator!=(const ConstIterator& rhs) const {
             return !(*this == rhs);
@@ -206,11 +223,14 @@ class RingBuffer {
     };
 
     class Iterator : public ConstIterator {
-        friend RingBuffer<T, N>;
+        friend class RingBuffer_base<T>;
+        template <typename TT, size_t N>
+        friend class RingBuffer;
 
-        Iterator(const T* ptr, int pos) {
+        Iterator(const T* ptr, int pos, size_t n) {
             this->ptr = ptr;
             this->pos = pos;
+            this->N = n;
         }
 
     public:
@@ -229,10 +249,10 @@ class RingBuffer {
 
         // all inherited methods that return ConstIterator must be reimplemented
         Iterator operator+(const int n) const {
-            return Iterator(this->ptr, this->pos + n);
+            return Iterator(this->ptr, this->pos + n, this->N);
         }
         Iterator operator-(const int n) const {
-            return Iterator(this->ptr, this->pos - n);
+            return Iterator(this->ptr, this->pos - n, this->N);
         }
         Iterator& operator+=(const int n) {
             this->pos += n;
@@ -264,27 +284,37 @@ class RingBuffer {
             return it;
         }
     };
-
+    using iterator = Iterator;
+    using const_iterator = ConstIterator;
+    //using iterator = typename RingBuffer_base<T>::Iterator;
+    //using const_iterator = typename RingBuffer_base<T>::ConstIterator;
+};
+template <typename T, size_t N>
+class RingBuffer : public RingBuffer_base<T>{
 protected:
-    friend class Iterator;
-    friend class ConstIterator;
+    friend class RingBuffer_base<T>::Iterator;
+    friend class RingBuffer_base<T>::ConstIterator;
 
     T queue_[N];
     int head_;
     int tail_;
 
 public:
-    using iterator = Iterator;
-    using const_iterator = ConstIterator;
+    //using Iterator = typename RingBuffer_base<T>::Iterator;
+    //using ConstIterator = typename RingBuffer_base<T>::ConstIterator;
+    //using iterator = typename RingBuffer_base<T>::Iterator;
+    //using const_iterator = typename RingBuffer_base<T>::ConstIterator;
 
     RingBuffer()
-    : queue_()
+    : RingBuffer_base<T>(N)
+    , queue_()
     , head_(0)
     , tail_(0) {
     }
 
     RingBuffer(std::initializer_list<T> lst)
-    : queue_()
+    : RingBuffer_base<T>(N)
+    , queue_()
     , head_(0)
     , tail_(0) {
         for (auto it = lst.begin(); it != lst.end(); ++it) {
@@ -294,10 +324,11 @@ public:
 
     // copy
     explicit RingBuffer(const RingBuffer& r)
-    : queue_()
+    : RingBuffer_base<T>(N)
+    , queue_()
     , head_(r.head_)
     , tail_(r.tail_) {
-        const_iterator it = r.begin();
+        typename RingBuffer_base<T>::const_iterator it = r.begin();
         for (size_t i = 0; i < r.size(); ++i) {
             int pos = it.index_with_offset(i);
             queue_[pos] = r.queue_[pos];
@@ -306,7 +337,7 @@ public:
     RingBuffer& operator=(const RingBuffer& r) {
         head_ = r.head_;
         tail_ = r.tail_;
-        const_iterator it = r.begin();
+        typename RingBuffer_base<T>::const_iterator it = r.begin();
         for (size_t i = 0; i < r.size(); ++i) {
             int pos = it.index_with_offset(i);
             queue_[pos] = r.queue_[pos];
@@ -315,10 +346,11 @@ public:
     }
 
     // move
-    RingBuffer(RingBuffer&& r) {
+    RingBuffer(RingBuffer&& r)
+    : RingBuffer_base<T>(N) {
         head_ = container::detail::move(r.head_);
         tail_ = container::detail::move(r.tail_);
-        const_iterator it = r.begin();
+        typename RingBuffer_base<T>::const_iterator it = r.begin();
         for (size_t i = 0; i < r.size(); ++i) {
             int pos = it.index_with_offset(i);
             queue_[pos] = container::detail::move(r.queue_[pos]);
@@ -328,7 +360,7 @@ public:
     RingBuffer& operator=(RingBuffer&& r) {
         head_ = container::detail::move(r.head_);
         tail_ = container::detail::move(r.tail_);
-        const_iterator it = r.begin();
+        typename RingBuffer_base<T>::const_iterator it = r.begin();
         for (size_t i = 0; i < r.size(); ++i) {
             int pos = it.index_with_offset(i);
             queue_[pos] = container::detail::move(r.queue_[pos]);
@@ -336,7 +368,7 @@ public:
         return *this;
     }
 
-    size_t capacity() const { return N; };
+    //override size_t capacity() const { return N; };
     size_t size() const { return tail_ - head_; }
     // data() method better not to use :-(
     // it should point to the 1st item and have enough space for size() readings of items
@@ -401,17 +433,17 @@ public:
     const T& operator[](size_t index) const { return get(static_cast<int>(index)); }
     T& operator[](size_t index) { return get(static_cast<int>(index)); }
 
-    iterator begin() { return empty() ? Iterator() : Iterator(queue_, head_); }
-    iterator end() { return empty() ? Iterator() : Iterator(queue_, tail_); }
-    const_iterator begin() const { return empty() ? ConstIterator() : ConstIterator(queue_, head_); }
-    const_iterator end() const { return empty() ? ConstIterator() : ConstIterator(queue_, tail_); }
+    typename RingBuffer_base<T>::iterator begin() { return empty() ? typename RingBuffer_base<T>::Iterator() : typename RingBuffer_base<T>::Iterator(queue_, head_, N); }
+    typename RingBuffer_base<T>::iterator end() { return empty() ? typename RingBuffer_base<T>::Iterator() : typename RingBuffer_base<T>::Iterator(queue_, tail_, N); }
+    typename RingBuffer_base<T>::const_iterator begin() const { return empty() ? typename RingBuffer_base<T>::ConstIterator() : typename RingBuffer_base<T>::ConstIterator(queue_, head_, N); }
+    typename RingBuffer_base<T>::const_iterator end() const { return empty() ? typename RingBuffer_base<T>::ConstIterator() : typename RingBuffer_base<T>::ConstIterator(queue_, tail_, N); }
 
     // https://en.cppreference.com/w/cpp/container/vector/erase
-    iterator erase(const const_iterator& p) {
+    typename RingBuffer_base<T>::iterator erase(const typename RingBuffer_base<T>::const_iterator& p) {
         if (!is_valid(p)) return end();
 
-        iterator it_last = end() - 1;
-        for (iterator it = p.to_iterator(); it != it_last; ++it)
+        typename RingBuffer_base<T>::iterator it_last = end() - 1;
+        for (typename RingBuffer_base<T>::iterator it = p.to_iterator(); it != it_last; ++it)
             *it = *(it + 1);
         *it_last = T();
         decrement_tail();
@@ -427,7 +459,7 @@ public:
         }
     }
 
-    void assign(const_iterator first, const_iterator end) {
+    void assign(typename RingBuffer_base<T>::const_iterator first, typename RingBuffer_base<T>::const_iterator end) {
         clear();
         while (first != end) push(*(first++));
     }
@@ -447,65 +479,65 @@ public:
     }
 
     void fill(const T& v) {
-        for (iterator it = begin(); it != end(); ++it)
+        for (typename RingBuffer_base<T>::iterator it = begin(); it != end(); ++it)
             *it = v;
     }
 
     // https://en.cppreference.com/w/cpp/container/vector/insert
-    void insert(const const_iterator& pos, const const_iterator& first, const const_iterator& last) {
+    void insert(const typename RingBuffer_base<T>::const_iterator& pos, const typename RingBuffer_base<T>::const_iterator& first, const typename RingBuffer_base<T>::const_iterator& last) {
         if (!is_valid(pos) && pos != end())
             return;
 
         size_t sz = last - first;
 
         size_t new_sz = size() + sz;
-        if (new_sz > capacity())
-            new_sz = capacity();
+        if (new_sz > RingBuffer_base<T>::capacity())
+            new_sz = RingBuffer_base<T>::capacity();
 
-        iterator it = begin() + new_sz - 1;
+        typename RingBuffer_base<T>::iterator it = begin() + new_sz - 1;
         while (it != pos) {
             *it = *(it - sz);
             --it;
         }
         for (size_t i = 0; i < sz; ++i) {
             *(it + i) = *(first + i);
-            if (size() < capacity() || (it + i) == end())
+            if (size() < RingBuffer_base<T>::capacity() || (it + i) == end())
                 increment_tail();
         }
     }
 
-    void insert(const const_iterator& pos, const T* first, const T* last) {
+    void insert(const typename RingBuffer_base<T>::const_iterator& pos, const T* first, const T* last) {
         if (!is_valid(pos) && pos != end())
             return;
 
         size_t sz = last - first;
 
         size_t new_sz = size() + sz;
-        if (new_sz > capacity())
-            new_sz = capacity();
+        if (new_sz > RingBuffer_base<T>::capacity())
+            new_sz = RingBuffer_base<T>::capacity();
 
-        iterator it = begin() + new_sz - 1;
+        typename RingBuffer_base<T>::iterator it = begin() + new_sz - 1;
         while (it != pos) {
             *it = *(it - sz);
             --it;
         }
         for (size_t i = 0; i < sz; ++i) {
             *(it + i) = *(first + i);
-            if (size() < capacity() || (it + i) == end())
+            if (size() < RingBuffer_base<T>::capacity() || (it + i) == end())
                 increment_tail();
         }
     }
 
-    void insert(const const_iterator& pos, const T& val) {
+    void insert(const typename RingBuffer_base<T>::const_iterator& pos, const T& val) {
         const T* ptr = &val;
         insert(pos, ptr, ptr + 1);
     }
 
 private:
-    T& get(const iterator& it) {
+    T& get(const typename RingBuffer_base<T>::iterator& it) {
         return queue_[it.index()];
     }
-    const T& get(const const_iterator& it) const {
+    const T& get(const typename RingBuffer_base<T>::const_iterator& it) const {
         return queue_[it.index()];
     }
     T& get(const int index) {
@@ -515,10 +547,10 @@ private:
         return queue_[begin().index_with_offset(index)];
     }
 
-    T* ptr(const iterator& it) {
+    T* ptr(const typename RingBuffer_base<T>::iterator& it) {
         return queue_ + it.index();
     }
-    const T* ptr(const const_iterator& it) const {
+    const T* ptr(const typename RingBuffer_base<T>::const_iterator& it) const {
         return queue_ + it.index();
     }
     T* ptr(const int index) {
@@ -552,8 +584,8 @@ private:
     void resolve_overflow() {
         if (empty())
             clear();
-        else if (head_ <= (static_cast<int>(INT_MIN) + static_cast<int>(capacity())) \
-                || tail_ >= (static_cast<int>(INT_MAX) - static_cast<int>(capacity()))) {
+        else if (head_ <= (static_cast<int>(INT_MIN) + static_cast<int>(RingBuffer_base<T>::capacity())) \
+                || tail_ >= (static_cast<int>(INT_MAX) - static_cast<int>(RingBuffer_base<T>::capacity()))) {
             // +/- capacity(): reserve some space for pointer/iterator arithmetics
             // head_/tail_ pointers are re-set N+1 steps before the overflow occurs
             int len = size();
@@ -562,514 +594,12 @@ private:
         }
     }
 
-    bool is_valid(const const_iterator& it) const {
+    bool is_valid(const typename RingBuffer_base<T>::const_iterator& it) const {
         if (it.ptr != queue_)
             return false; // iterator to a different object
         return (it.raw_pos() >= head_) && (it.raw_pos() < tail_);
     }
 };
-#if 0
-typedef int8_t intTiny;
-typedef uint8_t size_tTiny;
-template <typename T, size_tTiny N>
-class RingBufferTiny {
-    class IteratorTiny;
-    class ConstIteratorTiny {
-        friend RingBufferTiny<T, N>;
-
-        const T* ptr {nullptr};  // pointer to the first element
-        intTiny pos {0};
-
-        ConstIteratorTiny(const T* ptr, intTiny pos)
-        : ptr(ptr), pos(pos) {}
-
-    public:
-        ConstIteratorTiny() {}
-        ConstIteratorTiny(const ConstIteratorTiny& it) {
-            this->ptr = it.ptr;
-            this->pos = it.pos;
-        }
-
-        ConstIteratorTiny(ConstIteratorTiny&& it) {
-            this->ptr = container::detail::move(it.ptr);
-            this->pos = container::detail::move(it.pos);
-        }
-
-        ConstIteratorTiny& operator=(const ConstIteratorTiny& rhs) {
-            this->ptr = rhs.ptr;
-            this->pos = rhs.pos;
-            return *this;
-        }
-        ConstIteratorTiny& operator=(ConstIteratorTiny&& rhs) {
-            this->ptr = container::detail::move(rhs.ptr);
-            this->pos = container::detail::move(rhs.pos);
-            return *this;
-        }
-
-        // const-like conversion ConstIterator => Iterator
-        IteratorTiny to_iterator() const {
-            return IteratorTiny(this->ptr, this->pos);
-        }
-
-    private:
-        static int pos_wrap_around(const intTiny pos) {
-            if (pos >= 0)
-                return pos % N;
-            else
-                return (N - 1) - (abs(pos + 1) % N);
-        }
-
-    public:
-        intTiny index() const {
-            return pos_wrap_around(pos);
-        }
-        intTiny index_with_offset(const intTiny i) const {
-            return pos_wrap_around(pos + i);
-        }
-
-        const T& operator*() const {
-            return *(ptr + index());
-        }
-        const T* operator->() const {
-            return ptr + index();
-        }
-
-        ConstIteratorTiny operator+(const intTiny n) const {
-            return ConstIterator(this->ptr, this->pos + n);
-        }
-        intTiny operator-(const ConstIteratorTiny& rhs) const {
-            return this->pos - rhs.pos;
-        }
-        ConstIteratorTiny operator-(const intTiny n) const {
-            return ConstIterator(this->ptr, this->pos - n);
-        }
-        ConstIteratorTiny& operator+=(const intTiny n) {
-            this->pos += n;
-            return *this;
-        }
-        ConstIteratorTiny& operator-=(const intTiny n) {
-            this->pos -= n;
-            return *this;
-        }
-
-        // prefix increment/decrement
-        ConstIteratorTiny& operator++() {
-            ++pos;
-            return *this;
-        }
-        ConstIteratorTiny& operator--() {
-            --pos;
-            return *this;
-        }
-        // postfix increment/decrement
-        ConstIteratorTiny operator++(int) { // MUST take unnamed 'int'
-            ConstIteratorTiny it = *this;
-            ++pos;
-            return it;
-        }
-        ConstIteratorTiny operator--(int) { // MUST take unnamed 'int'
-            ConstIteratorTiny it = *this;
-            --pos;
-            return it;
-        }
-
-        bool operator==(const ConstIteratorTiny& rhs) const {
-            return (rhs.ptr == ptr) && (rhs.pos == pos);
-        }
-        bool operator!=(const ConstIteratorTiny& rhs) const {
-            return !(*this == rhs);
-        }
-        bool operator<(const ConstIteratorTiny& rhs) const {
-            return pos < rhs.pos;
-        }
-        bool operator<=(const ConstIteratorTiny& rhs) const {
-            return pos <= rhs.pos;
-        }
-        bool operator>(const ConstIteratorTiny& rhs) const {
-            return pos > rhs.pos;
-        }
-        bool operator>=(const ConstIteratorTiny& rhs) const {
-            return pos >= rhs.pos;
-        }
-
-    private:
-        intTiny raw_pos() const {
-            return pos;
-        }
-
-        void set(const intTiny i) {
-            pos = i;
-        }
-
-        void reset() {
-            pos = 0;
-        }
-    };
-    class IteratorTiny : public ConstIteratorTiny {
-        friend RingBufferTiny<T, N>;
-
-        IteratorTiny(const T* ptr, intTiny pos) {
-            this->ptr = ptr;
-            this->pos = pos;
-        }
-
-    public:
-        IteratorTiny() = default;
-        IteratorTiny(const IteratorTiny&) = default;
-        IteratorTiny(IteratorTiny&&) = default;
-        IteratorTiny& operator=(const IteratorTiny&) = default;
-        IteratorTiny& operator=(IteratorTiny&&) = default;
-
-        T& operator*() {
-            return *(const_cast<T*>(this->ptr) + this->index());
-        }
-        T* operator->() {
-            return const_cast<T*>(this->ptr) + this->index();
-        }
-
-        // all inherited methods that return ConstIterator must be reimplemented
-        IteratorTiny operator+(const intTiny n) const {
-            return IteratorTiny(this->ptr, this->pos + n);
-        }
-        IteratorTiny operator-(const intTiny n) const {
-            return IteratorTiny(this->ptr, this->pos - n);
-        }
-        IteratorTiny& operator+=(const intTiny n) {
-            this->pos += n;
-            return *this;
-        }
-        IteratorTiny& operator-=(const intTiny n) {
-            this->pos -= n;
-            return *this;
-        }
-
-        // prefix increment/decrement
-        IteratorTiny& operator++() {
-            ++(this->pos);
-            return *this;
-        }
-        IteratorTiny& operator--() {
-            --(this->pos);
-            return *this;
-        }
-        // postfix increment/decrement
-        IteratorTiny operator++(int) { // MUST take unnamed int param
-            IteratorTiny it = *this;
-            ++(this->pos);
-            return it;
-        }
-        IteratorTiny operator--(int) { // MUST take unnamed int param
-            IteratorTiny it = *this;
-            --(this->pos);
-            return it;
-        }
-    };
-
-protected:
-    friend class IteratorTiny;
-    friend class ConstIteratorTiny;
-
-    T queue_[N];
-    intTiny head_;
-    intTiny tail_;
-
-public:
-    using iteratorTiny = IteratorTiny;
-    using const_iteratorTiny = ConstIteratorTiny;
-
-    RingBufferTiny()
-    : queue_()
-    , head_(0)
-    , tail_(0) {
-    }
-
-    RingBufferTiny(std::initializer_list<T> lst)
-    : queue_()
-    , head_(0)
-    , tail_(0) {
-        for (auto it = lst.begin(); it != lst.end(); ++it) {
-            push_back(*it);
-        }
-    }
-
-    // copy
-    explicit RingBufferTiny(const RingBufferTiny& r)
-    : queue_()
-    , head_(r.head_)
-    , tail_(r.tail_) {
-        const_iteratorTiny it = r.begin();
-        for (size_tTiny i = 0; i < r.size(); ++i) {
-            intTiny pos = it.index_with_offset(i);
-            queue_[pos] = r.queue_[pos];
-        }
-    }
-    RingBufferTiny& operator=(const RingBufferTiny& r) {
-        head_ = r.head_;
-        tail_ = r.tail_;
-        const_iteratorTiny it = r.begin();
-        for (size_tTiny i = 0; i < r.size(); ++i) {
-            intTiny pos = it.index_with_offset(i);
-            queue_[pos] = r.queue_[pos];
-        }
-        return *this;
-    }
-
-    // move
-    RingBufferTiny(RingBufferTiny&& r) {
-        head_ = container::detail::move(r.head_);
-        tail_ = container::detail::move(r.tail_);
-        const_iteratorTiny it = r.begin();
-        for (size_tTiny i = 0; i < r.size(); ++i) {
-            intTiny pos = it.index_with_offset(i);
-            queue_[pos] = container::detail::move(r.queue_[pos]);
-        }
-    }
-
-    RingBufferTiny& operator=(RingBufferTiny&& r) {
-        head_ = container::detail::move(r.head_);
-        tail_ = container::detail::move(r.tail_);
-        const_iteratorTiny it = r.begin();
-        for (size_tTiny i = 0; i < r.size(); ++i) {
-            intTiny pos = it.index_with_offset(i);
-            queue_[pos] = container::detail::move(r.queue_[pos]);
-        }
-        return *this;
-    }
-
-    size_tTiny capacity() const { return N; };
-    size_tTiny size() const { return tail_ - head_; }
-    // data() method better not to use :-(
-    // it should point to the 1st item and have enough space for size() readings of items
-    // impossible with ringbuffer - either points to the 1st item or has enough space
-    // only exception when it works is when head_ pos == 0
-    const T* data() const { return reinterpret_cast<const T*>(&(queue_)); }
-    T* data() { return reinterpret_cast<T*>(&(queue_)); }
-    bool empty() const { return tail_ == head_; }
-    void clear() { head_ = tail_ = 0; }
-
-    void pop() {
-        pop_front();
-    }
-    void pop_front() {
-        if (size() == 0) return;
-        if (size() == 1)
-            clear();
-        else
-            increment_head();
-    }
-    void pop_back() {
-        if (size() == 0) return;
-        if (size() == 1)
-            clear();
-        else
-            decrement_tail();
-    }
-
-    void push(const T& data) {
-        push_back(data);
-    }
-    void push(T&& data) {
-        push_back(data);
-    }
-    void push_back(const T& data) {
-        get(size()) = data;
-        increment_tail();
-    }
-    void push_back(T&& data) {
-        get(size()) = data;
-        increment_tail();
-    }
-    void push_front(const T& data) {
-        decrement_head();
-        get(0) = data;
-    }
-    void push_front(T&& data) {
-        decrement_head();
-        get(0) = data;
-    }
-    void emplace(const T& data) { push(data); }
-    void emplace(T&& data) { push(data); }
-    void emplace_back(const T& data) { push_back(data); }
-    void emplace_back(T&& data) { push_back(data); }
-
-    const T& front() const { return get(0); }
-    T& front() { return get(0); }
-
-    const T& back() const { return get(static_cast<intTiny>(size()) - 1); }
-    T& back() { return get(static_cast<intTiny>(size()) - 1); }
-
-    const T& operator[](size_tTiny index) const { return get(static_cast<intTiny>(index)); }
-    T& operator[](size_tTiny index) { return get(static_cast<intTiny>(index)); }
-
-    iteratorTiny begin() { return empty() ? IteratorTiny() : IteratorTiny(queue_, head_); }
-    iteratorTiny end() { return empty() ? IteratorTiny() : IteratorTiny(queue_, tail_); }
-    const_iteratorTiny begin() const { return empty() ? ConstIteratorTiny() : ConstIteratorTiny(queue_, head_); }
-    const_iteratorTiny end() const { return empty() ? ConstIteratorTiny() : ConstIteratorTiny(queue_, tail_); }
-
-    // https://en.cppreference.com/w/cpp/container/vector/erase
-    iteratorTiny erase(const const_iteratorTiny& p) {
-        if (!is_valid(p)) return end();
-
-        iteratorTiny it_last = end() - 1;
-        for (iteratorTiny it = p.to_iterator(); it != it_last; ++it)
-            *it = *(it + 1);
-        *it_last = T();
-        decrement_tail();
-        return empty() ? end() : p.to_iterator();
-    }
-
-    void resize(size_tTiny sz) {
-        size_tTiny s = size();
-        if (sz > s) {
-            for (size_tTiny i = 0; i < sz - s; ++i) push(T());
-        } else if (sz < s) {
-            for (size_tTiny i = 0; i < s - sz; ++i) pop();
-        }
-    }
-
-    void assign(const_iteratorTiny first, const_iteratorTiny end) {
-        clear();
-        while (first != end) push(*(first++));
-    }
-
-    void assign(const T* first, const T* end) {
-        clear();
-        while (first != end) push(*(first++));
-    }
-
-    void shrink_to_fit() {
-        // dummy
-    }
-
-    void reserve(size_tTiny n) {
-        (void)n;
-        // dummy
-    }
-
-    void fill(const T& v) {
-        for (iteratorTiny it = begin(); it != end(); ++it)
-            *it = v;
-    }
-
-    // https://en.cppreference.com/w/cpp/container/vector/insert
-    void insert(const const_iteratorTiny& pos, const const_iteratorTiny& first, const const_iteratorTiny& last) {
-        if (!is_valid(pos) && pos != end())
-            return;
-
-        size_tTiny sz = last - first;
-
-        size_tTiny new_sz = size() + sz;
-        if (new_sz > capacity())
-            new_sz = capacity();
-
-        iteratorTiny it = begin() + new_sz - 1;
-        while (it != pos) {
-            *it = *(it - sz);
-            --it;
-        }
-        for (size_tTiny i = 0; i < sz; ++i) {
-            *(it + i) = *(first + i);
-            if (size() < capacity() || (it + i) == end())
-                increment_tail();
-        }
-    }
-
-    void insert(const const_iteratorTiny& pos, const T* first, const T* last) {
-        if (!is_valid(pos) && pos != end())
-            return;
-
-        size_tTiny sz = last - first;
-
-        size_tTiny new_sz = size() + sz;
-        if (new_sz > capacity())
-            new_sz = capacity();
-
-        iteratorTiny it = begin() + new_sz - 1;
-        while (it != pos) {
-            *it = *(it - sz);
-            --it;
-        }
-        for (size_tTiny i = 0; i < sz; ++i) {
-            *(it + i) = *(first + i);
-            if (size() < capacity() || (it + i) == end())
-                increment_tail();
-        }
-    }
-
-    void insert(const const_iteratorTiny& pos, const T& val) {
-        const T* ptr = &val;
-        insert(pos, ptr, ptr + 1);
-    }
-
-private:
-    T& get(const iteratorTiny& it) {
-        return queue_[it.index()];
-    }
-    const T& get(const const_iteratorTiny& it) const {
-        return queue_[it.index()];
-    }
-    T& get(const intTiny index) {
-        return queue_[begin().index_with_offset(index)];
-    }
-    const T& get(const intTiny index) const {
-        return queue_[begin().index_with_offset(index)];
-    }
-
-    T* ptr(const iteratorTiny& it) {
-        return queue_ + it.index();
-    }
-    const T* ptr(const const_iteratorTiny& it) const {
-        return queue_ + it.index();
-    }
-    T* ptr(const intTiny index) {
-        return queue_ + begin().index_with_offset(index);
-    }
-    const T* ptr(const intTiny index) const {
-        return queue_ + begin().index_with_offset(index);
-    }
-
-    void increment_head() {
-        ++head_;
-        resolve_overflow();
-    }
-    void increment_tail() {
-        ++tail_;
-        resolve_overflow();
-        if (size() > N)
-            increment_head();
-    }
-    void decrement_head() {
-        --head_;
-        resolve_overflow();
-        if (size() > N)
-            decrement_tail();
-    }
-    void decrement_tail() {
-        --tail_;
-        resolve_overflow();
-    }
-
-    void resolve_overflow() {
-        if (empty())
-            clear();
-        // TODO check vvvv
-        else if (head_ <= (static_cast<intTiny>(INT_MIN) + static_cast<intTiny>(capacity())) \
-                || tail_ >= (static_cast<intTiny>(INT_MAX) - static_cast<intTiny>(capacity()))) {
-            // +/- capacity(): reserve some space for pointer/iterator arithmetics
-            // head_/tail_ pointers are re-set N+1 steps before the overflow occurs
-            intTiny len = size();
-            head_ = begin().index();
-            tail_ = head_ + len;
-        }
-    }
-
-    bool is_valid(const const_iteratorTiny& it) const {
-        if (it.ptr != queue_)
-            return false; // iterator to a different object
-        return (it.raw_pos() >= head_) && (it.raw_pos() < tail_);
-    }
-};
-#endif
 } // namespace arx
 
 template <typename T, size_t N>
@@ -1090,8 +620,8 @@ namespace stdx {
 
 template <typename T, size_t N = ARX_VECTOR_DEFAULT_SIZE>
 struct vector : public RingBuffer<T, N> {
-    using iterator = typename RingBuffer<T, N>::iterator;
-    using const_iterator = typename RingBuffer<T, N>::const_iterator;
+    //using iterator = typename RingBuffer_base<T>::iterator;
+    //using const_iterator = typename RingBuffer_base<T>::const_iterator;
 
     vector()
     : RingBuffer<T, N>() {}
@@ -1133,8 +663,8 @@ namespace stdx {
 
 template <typename T, size_t N>
 struct array : public RingBuffer<T, N> {
-    using iterator = typename RingBuffer<T, N>::iterator;
-    using const_iterator = typename RingBuffer<T, N>::const_iterator;
+    //using iterator = typename RingBuffer_base<T>::iterator;
+    //using const_iterator = typename RingBuffer_base<T>::const_iterator;
 
     array()
     : RingBuffer<T, N>() {}
@@ -1175,8 +705,8 @@ namespace stdx {
 
 template <typename T, size_t N = ARX_DEQUE_DEFAULT_SIZE>
 struct deque : public RingBuffer<T, N> {
-    using iterator = typename RingBuffer<T, N>::iterator;
-    using const_iterator = typename RingBuffer<T, N>::const_iterator;
+    //using iterator = typename RingBuffer_base<T>::iterator;
+    //using const_iterator = typename RingBuffer_base<T>::const_iterator;
 
     deque()
     : RingBuffer<T, N>() {}
@@ -1207,55 +737,19 @@ private:
     using RingBuffer<T, N>::push;
     using RingBuffer<T, N>::fill;
 };
-#if 0
-template <typename T, size_t N = ARX_DEQUE_DEFAULT_SIZE>
-struct dequeTiny : public RingBufferTiny<T, N> {
-    using iteratorTiny = typename RingBufferTiny<T, N>::iteratorTiny;
-    using const_iteratorTiny = typename RingBufferTiny<T, N>::const_iteratorTiny;
-
-    dequeTiny()
-    : RingBufferTiny<T, N>() {}
-    dequeTiny(std::initializer_list<T> lst)
-    : RingBufferTiny<T, N>(lst) {}
-
-    // copy
-    dequeTiny(const dequeTiny& r)
-    : RingBufferTiny<T, N>(r) {}
-
-    dequeTiny& operator=(const dequeTiny& r) {
-        RingBufferTiny<T, N>::operator=(r);
-        return *this;
-    }
-
-    // move
-    dequeTiny(dequeTiny&& r)
-    : RingBufferTiny<T, N>(r) {}
-
-    dequeTiny& operator=(dequeTiny&& r) {
-        RingBufferTiny<T, N>::operator=(r);
-        return *this;
-    }
-
-private:
-    using RingBufferTiny<T, N>::capacity;
-    using RingBufferTiny<T, N>::pop;
-    using RingBufferTiny<T, N>::push;
-    using RingBufferTiny<T, N>::fill;
-};
-#endif
 } // namespace arx
 } // namespace stdx
 
 namespace arx {
 namespace stdx {
 
-template <class T1, class T2>
+template <typename T1, typename T2>
 struct pair {
     T1 first;
     T2 second;
 };
 
-template <class T1, class T2>
+template <typename T1, typename T2>
 inline pair<T1, T2> make_pair(const T1& t1, const T2& t2) {
     return {t1, t2};
 };
@@ -1276,18 +770,18 @@ inline bool operator!=(const arx::stdx::pair<T1, T2>& x, const arx::stdx::pair<T
 namespace arx {
 namespace stdx {
 
-template <class Key, class T, size_t N = ARX_MAP_DEFAULT_SIZE>
+template <typename Key, class T, size_t N = ARX_MAP_DEFAULT_SIZE>
 struct map : public RingBuffer<pair<Key, T>, N> {
     using base = RingBuffer<pair<Key, T>, N>;
-    using iterator = typename base::iterator;
-    using const_iterator = typename base::const_iterator;
+    //using iterator = typename RingBuffer_base<T>::iterator;
+    //using const_iterator = typename RingBuffer_base<T>::const_iterator;
 
     map()
     : base() {}
     map(std::initializer_list<pair<Key, T> > lst)
     : base(lst) {}
 
-    map(const_iterator iBegin, const_iterator iEnd)
+    map(typename RingBuffer_base<pair<Key, T> >::iterator iBegin, typename RingBuffer_base<pair<Key, T> >::iterator iEnd)
     : base() {
         for (auto it = iBegin; it != iEnd; ++it) {
             push_back(*it);
@@ -1313,29 +807,29 @@ struct map : public RingBuffer<pair<Key, T>, N> {
         return *this;
     }
 
-    const_iterator find(const Key& key) const {
-        for (const_iterator it = this->begin(); it != this->end(); ++it) {
+    typename RingBuffer_base<pair<Key, T> >::const_iterator find(const Key& key) const {
+        for (typename RingBuffer_base<pair<Key, T> >::const_iterator it = this->begin(); it != this->end(); ++it) {
             if (key == it->first)
                 return it;
         }
         return this->end();
     }
 
-    iterator find(const Key& key) {
-        for (iterator it = this->begin(); it != this->end(); ++it) {
+    typename RingBuffer_base<pair<Key, T> >::iterator find(const Key& key) {
+        for (typename RingBuffer_base<pair<Key, T> >::iterator it = this->begin(); it != this->end(); ++it) {
             if (key == it->first)
                 return it;
         }
         return this->end();
     }
 
-    pair<iterator, bool> insert(const Key& key, const T& t) {
+    pair<typename RingBuffer_base<pair<Key, T> >::iterator, bool> insert(const Key& key, const T& t) {
         return insert(::arx::stdx::make_pair(key, t));
     }
 
-    pair<iterator, bool> insert(const pair<Key, T>& p) {
+    pair<typename RingBuffer_base<pair<Key, T> >::iterator, bool> insert(const pair<Key, T>& p) {
         bool b {false};
-        iterator it = find(p.first);
+        typename RingBuffer_base<T>::iterator it = find(p.first);
         if (it == this->end()) {
             this->push(p);
             b = true;
@@ -1344,11 +838,11 @@ struct map : public RingBuffer<pair<Key, T>, N> {
         return {it, b};
     }
 
-    pair<iterator, bool> emplace(const Key& key, const T& t) {
+    pair<typename RingBuffer_base<pair<Key, T> >::iterator, bool> emplace(const Key& key, const T& t) {
         return insert(key, t);
     }
 
-    pair<iterator, bool> emplace(const pair<Key, T>& p) {
+    pair<typename RingBuffer_base<pair<Key, T> >::iterator, bool> emplace(const pair<Key, T>& p) {
         return insert(p);
     }
 
@@ -1360,41 +854,41 @@ private:
     }
 public:
     const T& at(const Key& key) const {
-        const_iterator it = find(key);
+        typename RingBuffer_base<pair<Key, T> >::const_iterator it = find(key);
         if (it != this->end()) return it->second;
         return empty_value();
         //return find(key)->second;
     }
 
     T& at(const Key& key) {
-        iterator it = find(key);
+        typename RingBuffer_base<pair<Key, T> >::iterator it = find(key);
         if (it != this->end()) return it->second;
         return empty_value();
         //return find(key)->second;
     }
 
-    iterator erase(const const_iterator& it) {
-        iterator i = find(it->first);
+    typename RingBuffer_base<T>::iterator erase(const typename RingBuffer_base<T>::const_iterator& it) {
+        typename RingBuffer_base<pair<Key, T> >::iterator i = find(it->first);
         return base::erase(i);
     }
 
-    iterator erase(const Key& key) {
-        iterator i = find(key);
+    typename RingBuffer_base<T>::iterator erase(const Key& key) {
+        typename RingBuffer_base<pair<Key, T> >::iterator i = find(key);
         return base::erase(i);
     }
 
     // erase() will cause compile error if map's Key is 'unsigned int'
     // => collision of this method with erase(const Key&)
-    iterator erase(const size_t index) {
+    typename RingBuffer_base<pair<Key, T> >::iterator erase(const size_t index) {
         if (index < this->size()) {
-            iterator it = this->begin() + index;
+            typename RingBuffer_base<T>::iterator it = this->begin() + index;
             return erase(it);
         }
         return this->end();
     }
 
     T& operator[](const Key& key) {
-        iterator it = find(key);
+        typename RingBuffer_base<T>::iterator it = find(key);
         if (it != this->end()) return it->second;
 
         insert(::arx::stdx::make_pair(key, T()));
