@@ -770,7 +770,7 @@ inline bool operator!=(const arx::stdx::pair<T1, T2>& x, const arx::stdx::pair<T
 namespace arx {
 namespace stdx {
 
-template <typename Key, class T, size_t N = ARX_MAP_DEFAULT_SIZE>
+template <typename Key, typename T, size_t N = ARX_MAP_DEFAULT_SIZE>
 struct map : public RingBuffer<pair<Key, T>, N> {
     using base = RingBuffer<pair<Key, T>, N>;
     //using iterator = typename RingBuffer_base<T>::iterator;
@@ -829,7 +829,7 @@ struct map : public RingBuffer<pair<Key, T>, N> {
 
     pair<typename RingBuffer_base<pair<Key, T> >::iterator, bool> insert(const pair<Key, T>& p) {
         bool b {false};
-        typename RingBuffer_base<T>::iterator it = find(p.first);
+        typename RingBuffer_base<pair<Key, T> >::iterator it = find(p.first);
         if (it == this->end()) {
             this->push(p);
             b = true;
@@ -888,7 +888,7 @@ public:
     }
 
     T& operator[](const Key& key) {
-        typename RingBuffer_base<T>::iterator it = find(key);
+        typename RingBuffer_base<pair<Key, T> >::iterator it = find(key);
         if (it != this->end()) return it->second;
 
         insert(::arx::stdx::make_pair(key, T()));
